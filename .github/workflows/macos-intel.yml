@@ -1,0 +1,53 @@
+name: Build macOS Intel DMG
+
+on:
+  push:
+    branches: [build/macos-intel]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.95.0
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - name: Build and bundle Herdr
+        env:
+          HERDR_PACKAGE_INTEL: "1"
+        run: |
+          test "$(uname -m)" = x86_64
+          scripts/package x86_64-apple-darwin
+      - name: Create and verify DMG
+        run: |
+          staging=$(mktemp -d)
+          mount=$(mktemp -d)
+          dmg=dist/Herdr-macos-x86_64.dmg
+          tar -xzf dist/herdr-app-macos-x86_64.tar.gz -C "$staging"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create -volname Herdr -srcfolder "$staging" -fs HFS+ -format UDZO "$dmg"
+          hdiutil verify "$dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dmg"
+          trap 'hdiutil detach "$mount"' EXIT
+          app="$mount/Herdr.app"
+          codesign --verify --deep --strict "$app"
+          binary="$app/Contents/MacOS/Herdr"
+          test "$(lipo -archs "$binary")" = x86_64
+          xcrun vtool -show-build "$binary"
+          "$binary" --help
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Herdr-macos-x86_64
+          path: dist/Herdr-macos-x86_64.dmg
+          if-no-files-found: error
+          retention-days: 30

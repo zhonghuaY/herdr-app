@@ -41,7 +41,7 @@ case "$arch" in
   arm64 | aarch64) arch=aarch64 ;;
   *) echo "package: unsupported CPU $arch" >&2; exit 1 ;;
 esac
-if [[ $os == macos && $arch != aarch64 ]]; then
+if [[ $os == macos && $arch == x86_64 && ${HERDR_PACKAGE_INTEL:-0} != 1 ]]; then
   echo "package: Intel Macs aren't supported; build from source instead." >&2
   exit 1
 fi
@@ -53,8 +53,12 @@ echo "package: herdr-app $version for $target"
 for notice in LICENSE THIRD-PARTY-NOTICES; do
   [[ -s $notice ]] || { echo "package: $notice is missing or empty" >&2; exit 1; }
 done
-# Only release builds update themselves (src/update.rs).
-HERDR_APP_RELEASE=1 cargo build --release --locked ${triple:+--target "$triple"}
+# Unofficial Intel packages must not use the upstream release updater.
+if [[ $target == macos-x86_64 ]]; then
+  env -u HERDR_APP_RELEASE cargo build --release --locked ${triple:+--target "$triple"}
+else
+  HERDR_APP_RELEASE=1 cargo build --release --locked ${triple:+--target "$triple"}
+fi
 
 if [[ $os == linux ]]; then export TMPDIR=${TMPDIR:-/var/tmp}; fi
 work=$(mktemp -d)
